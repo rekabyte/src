@@ -199,6 +199,9 @@ TP3.Render = {
 
 	updateTreeHermite: function (trunkGeometryBuffer, leavesGeometryBuffer, applesGeometryBuffer, rootNode) {
 		//TODO
+		
+
+		
 	},
 
 	drawTreeSkeleton: function (rootNode, scene, color = 0xffffff, matrix = new THREE.Matrix4()) {

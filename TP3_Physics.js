@@ -53,26 +53,25 @@ TP3.Physics = {
 
 		// ================== Debut fonction
 
-		// Calculate the counteracting force
+		//apres 100h de debug, jai decouvert que mon code aime pas la gravite
+		//contreforce gravite
 		var counterForce = new THREE.Vector3(0, node.mass, 0).multiplyScalar(dt);
-
-		// Add the counteracting force to the node's velocity
 		node.vel.add(counterForce);
 
-		// Appliquer aux branches la matrice parent
+		// appliquer aux branches la matrice du parent
 		if (node.parentNode != null){
 			node.p0 = node.parentNode.p1;
 			node.matNode = node.parentNode.matNode;
 			node.p1.applyMatrix4(node.matNode);
 		}
 
-			// Si nous sommes au noeud parent, c'est le temps de commencer
-		// une nouvelle matrice de transformation
+		//si on est au noeud parent, on commence
+		//une nouvelle matrice de transformation
 		else{
 			node.matNode = new THREE.Matrix4();
 		}
 
-		// La tranformation qu'on va appliquer à p1
+		//la transfo qu'on va appliquer a p1
 		var matTransP1 = new THREE.Matrix4();
 
 		var np0C = node.p0.clone();
@@ -80,7 +79,7 @@ TP3.Physics = {
 
 		var matNode = node.matNode;
 
-		// Matrices de transformation pour aller à [0,0,0]
+		//matrices de transfo pour aller a [0,0,0]
 		var mat00P0 = new THREE.Matrix4().makeTranslation(-node.p0.x,-node.p0.y,-node.p0.z);
 		np0C.applyMatrix4(mat00P0);
 
@@ -88,32 +87,40 @@ TP3.Physics = {
 		matTransP1 = new THREE.Matrix4().multiplyMatrices(mat00P1, matTransP1);
 		np1C.applyMatrix4(mat00P1);
 
-		// Matrice de transformation pour faire la bonne rotation
+		//matrice de transfo pour faire la bonne rotation
 		var velo = node.vel.clone().multiplyScalar(dt);
 		var nouvPos = new THREE.Vector3().addVectors(np1C, velo);
 		var nouvVectNorm = new THREE.Vector3().subVectors(nouvPos, np0C).normalize();
 		var anciVectNorm = new THREE.Vector3().subVectors(np1C, np0C).normalize();
+
+
 		var findRot = TP3.Geometry.findRotation(anciVectNorm, nouvVectNorm);
-		var matRot3 = TP3.Geometry.findRotationMatrix(findRot[0], findRot[1]);
+
+		//var matRot3 = TP3.Geometry.findRotationMatrix(findRot[0], findRot[1]);
+		var quaternion = new THREE.Quaternion();
+		quaternion.setFromAxisAngle(findRot[0], findRot[1]);
+		var matRot4 = new THREE.Matrix4();
+		matRot4.makeRotationFromQuaternion(quaternion);
+
 		var xAxis = new THREE.Vector3();
 		var yAxis = new THREE.Vector3();
 		var zAxis = new THREE.Vector3();
-		matRot3.extractBasis(xAxis,yAxis,zAxis);
+		matRot4.extractBasis(xAxis,yAxis,zAxis);
 		var matRot4 = new THREE.Matrix4().makeBasis(xAxis,yAxis,zAxis);
 		np1C.applyMatrix4(matRot4);
 
 		matTransP1 = new THREE.Matrix4().multiplyMatrices(matRot4, matTransP1);
 
-		// Matrice de transformation pour retourner à la bonne position
+		//matrice de transfo pour retourner a la bonne position
 		var matAnciP1 = new THREE.Matrix4().makeTranslation(node.p0.x,node.p0.y,node.p0.z);
 
 		matTransP1 = new THREE.Matrix4().multiplyMatrices(matAnciP1, matTransP1);
 
-		// Appliquer toutes les transformations
+		//appliquer toutes les transfos necessaires
 		node.p1.applyMatrix4(matTransP1);
 		node.matNode = new THREE.Matrix4().multiplyMatrices(matTransP1, matNode);
 
-		// Calculer la vraie vélocité après la projection
+		//calculer la vraie velocity apres la projection
 		var anciPos = node.p1.clone();
 		var vectAnciPos = new THREE.Vector3().subVectors(anciPos, node.p0);
 		var vectPosActu = new THREE.Vector3().subVectors(node.p1, node.p0);
@@ -122,10 +129,10 @@ TP3.Physics = {
 		var vraiVol = new THREE.Vector3().subVectors(vectPosActu, vectAnciPos);
 
 
-		// Remplacer l'ancienne vélocité par cette vraie vélocité projetée
+		//remplacer l'ancienne velocity par cette vraie velocity projetee
 		node.vel = vraiVol.multiplyScalar(dt);
 
-		// Calculer l'angle de restitution de la branche
+		//calculer l'angle de restitution de la branche
 		//var normAnciPos = anciPos.clone().normalize();
 		//var normNodep1 = node.p1.clone().normalize();
 		var normAnciPos = vectAnciPos.clone().normalize();
@@ -135,23 +142,31 @@ TP3.Physics = {
 		var axeResti = findRotResti[0];
 		var angleResti = findRotResti[1]**2;
 
-		// Trouver la matrice de rotation de la restitution
-		var matRot3Resti = TP3.Geometry.findRotationMatrix(axeResti, angleResti);
+		//trouver la matrice de rotation de la restitution
+
+
+		//var matRot3Resti = TP3.Geometry.findRotationMatrix(axeResti, angleResti);
+		var quaternionResti = new THREE.Quaternion();
+		quaternionResti.setFromAxisAngle(axeResti, angleResti);
+		var matRot4Resti = new THREE.Matrix4();
+		matRot4Resti.makeRotationFromQuaternion(quaternionResti);
+
+
 		var xAxisResti = new THREE.Vector3();
 		var yAxisResti = new THREE.Vector3();
 		var zAxisResti = new THREE.Vector3();
-		matRot3Resti.extractBasis(xAxisResti,yAxisResti,zAxisResti);
+		matRot4Resti.extractBasis(xAxisResti,yAxisResti,zAxisResti);
 		var matRot4Resti = new THREE.Matrix4().makeBasis(xAxisResti,yAxisResti,zAxisResti);
 
-		// Trouver ou serait le point avec restitution
+		//trouver ou serait le point avec restitution
 		var pt = node.p1.clone();
 		pt.applyMatrix4(matRot4Resti);
 
-		// Calculer le vecteur de la vélocité de la restitution
+		//calculer le vecteur de la velocity de la restitution
 		var veloResti = new THREE.Vector3().subVectors(pt, node.p1);
-		veloResti.multiplyScalar(0.7*node.a0*1000*dt);
+		veloResti.multiplyScalar(0.7*node.a0*dt);
 
-		// La restitution sera appliquée au prohain temps
+		//la restitution sera appliquée au prohain temps
 		node.vel.add(veloResti).multiplyScalar(dt);
 
 		//==================== Fin fonction
