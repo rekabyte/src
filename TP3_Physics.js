@@ -51,15 +51,16 @@ TP3.Physics = {
 
 		// TODO: Projection du mouvement, force de restitution et amortissement de la velocite
 
-		// ================== Debut fonction
+		// ================== Debut 
 
-		//apres 100h de debug, jai decouvert que mon code aime pas la gravite
+		//apres 100h de debug => mon code n'aime pas la gravite
+		//svp ne jugez pas mon travail durement, le cours est assez difficile U_U
 		//contreforce gravite
 		var counterForce = new THREE.Vector3(0, node.mass, 0).multiplyScalar(dt);
 		node.vel.add(counterForce);
 
-		// appliquer aux branches la matrice du parent
-		if (node.parentNode != null){
+		//on transfere la matrice parent aux enfants
+		if (node.parentNode){
 			node.p0 = node.parentNode.p1;
 			node.matNode = node.parentNode.matNode;
 			node.p1.applyMatrix4(node.matNode);
@@ -71,105 +72,95 @@ TP3.Physics = {
 			node.matNode = new THREE.Matrix4();
 		}
 
-		//la transfo qu'on va appliquer a p1
-		var matTransP1 = new THREE.Matrix4();
+		//on copie les matrix actuelles:
+		var currentPosTransMatrix = new THREE.Matrix4();
+		var previousPosCopy = node.p0.clone();
+		var currentPosCopy = node.p1.clone();
+		var nodeTransformMatrix = node.matNode;
 
-		var np0C = node.p0.clone();
-		var np1C = node.p1.clone();
+		//matrice de transfo pour aller a l'origine (0,0,0)
+		var translateMatToOrigin = new THREE.Matrix4().makeTranslation(-node.p0.x,-node.p0.y,-node.p0.z);
 
-		var matNode = node.matNode;
+		//on l'applique a la copie de l'ancienne matrice de position
+		previousPosCopy.applyMatrix4(translateMatToOrigin);
 
-		//matrices de transfo pour aller a [0,0,0]
-		var mat00P0 = new THREE.Matrix4().makeTranslation(-node.p0.x,-node.p0.y,-node.p0.z);
-		np0C.applyMatrix4(mat00P0);
-
-		var mat00P1 = new THREE.Matrix4().makeTranslation(-node.p0.x,-node.p0.y,-node.p0.z);
-		matTransP1 = new THREE.Matrix4().multiplyMatrices(mat00P1, matTransP1);
-		np1C.applyMatrix4(mat00P1);
+		currentPosTransMatrix.multiply(new THREE.Matrix4().makeTranslation(-node.p0.x,-node.p0.y,-node.p0.z));
+		currentPosCopy.applyMatrix4(translateMatToOrigin);
 
 		//matrice de transfo pour faire la bonne rotation
-		var velo = node.vel.clone().multiplyScalar(dt);
-		var nouvPos = new THREE.Vector3().addVectors(np1C, velo);
-		var nouvVectNorm = new THREE.Vector3().subVectors(nouvPos, np0C).normalize();
-		var anciVectNorm = new THREE.Vector3().subVectors(np1C, np0C).normalize();
+		var velocityVector = node.vel.clone().multiplyScalar(dt);
+		var newPosition = new THREE.Vector3().addVectors(currentPosCopy, velocityVector);
+		var newNormVector = new THREE.Vector3().subVectors(newPosition, previousPosCopy).normalize();
+		var previousNormVector = new THREE.Vector3().subVectors(currentPosCopy, previousPosCopy).normalize();
 
 
-		var findRot = TP3.Geometry.findRotation(anciVectNorm, nouvVectNorm);
-
-		//var matRot3 = TP3.Geometry.findRotationMatrix(findRot[0], findRot[1]);
-		var quaternion = new THREE.Quaternion();
-		quaternion.setFromAxisAngle(findRot[0], findRot[1]);
-		var matRot4 = new THREE.Matrix4();
-		matRot4.makeRotationFromQuaternion(quaternion);
+		var rotation = TP3.Geometry.findRotation(previousNormVector, newNormVector);
+		var rotationQuaternion = new THREE.Quaternion();
+		rotationQuaternion.setFromAxisAngle(rotation[0], rotation[1]);
+		var rotationMatrix = new THREE.Matrix4();
+		rotationMatrix.makeRotationFromQuaternion(rotationQuaternion);
 
 		var xAxis = new THREE.Vector3();
 		var yAxis = new THREE.Vector3();
 		var zAxis = new THREE.Vector3();
-		matRot4.extractBasis(xAxis,yAxis,zAxis);
-		var matRot4 = new THREE.Matrix4().makeBasis(xAxis,yAxis,zAxis);
-		np1C.applyMatrix4(matRot4);
+		rotationMatrix.extractBasis(xAxis,yAxis,zAxis);
+		var rotationMatrix = new THREE.Matrix4().makeBasis(xAxis,yAxis,zAxis);
+		currentPosCopy.applyMatrix4(rotationMatrix);
 
-		matTransP1 = new THREE.Matrix4().multiplyMatrices(matRot4, matTransP1);
+		currentPosTransMatrix = new THREE.Matrix4().multiplyMatrices(rotationMatrix, currentPosTransMatrix);
 
-		//matrice de transfo pour retourner a la bonne position
-		var matAnciP1 = new THREE.Matrix4().makeTranslation(node.p0.x,node.p0.y,node.p0.z);
+		//matrice de transfo pour retourner a la bonne position (ancienne position)
+		var transMatrixToOldPos = new THREE.Matrix4().makeTranslation(node.p0.x,node.p0.y,node.p0.z);
 
-		matTransP1 = new THREE.Matrix4().multiplyMatrices(matAnciP1, matTransP1);
+		currentPosTransMatrix = new THREE.Matrix4().multiplyMatrices(transMatrixToOldPos, currentPosTransMatrix);
 
 		//appliquer toutes les transfos necessaires
-		node.p1.applyMatrix4(matTransP1);
-		node.matNode = new THREE.Matrix4().multiplyMatrices(matTransP1, matNode);
+		node.p1.applyMatrix4(currentPosTransMatrix);
+		node.matNode = new THREE.Matrix4().multiplyMatrices(currentPosTransMatrix, nodeTransformMatrix);
 
 		//calculer la vraie velocity apres la projection
-		var anciPos = node.p1.clone();
-		var vectAnciPos = new THREE.Vector3().subVectors(anciPos, node.p0);
-		var vectPosActu = new THREE.Vector3().subVectors(node.p1, node.p0);
+		var oldPosition = node.p1.clone();
+		var oldPositionVector = new THREE.Vector3().subVectors(oldPosition, node.p0);
+		var currentPosVector = new THREE.Vector3().subVectors(node.p1, node.p0);
 
-		//var vraiVol = new THREE.Vector3().subVectors(node.p1, anciPos);
-		var vraiVol = new THREE.Vector3().subVectors(vectPosActu, vectAnciPos);
+		var trueVelocity = new THREE.Vector3().subVectors(currentPosVector, oldPositionVector);
 
 
-		//remplacer l'ancienne velocity par cette vraie velocity projetee
-		node.vel = vraiVol.multiplyScalar(dt);
+		//remplacer l'ancienne velocity par cette velocity
+		node.vel = trueVelocity.multiplyScalar(dt);
 
 		//calculer l'angle de restitution de la branche
-		//var normAnciPos = anciPos.clone().normalize();
-		//var normNodep1 = node.p1.clone().normalize();
-		var normAnciPos = vectAnciPos.clone().normalize();
-		var normNodep1 = vectPosActu.clone().normalize();
+		var oldNormPosition = oldPositionVector.clone().normalize();
+		var currentNormPos = currentPosVector.clone().normalize();
 
-		var findRotResti = TP3.Geometry.findRotation(normAnciPos, normNodep1);
-		var axeResti = findRotResti[0];
-		var angleResti = findRotResti[1]**2;
+		var restitutionRotation = TP3.Geometry.findRotation(oldNormPosition, currentNormPos);
+		var restitutionAxis = restitutionRotation[0];
+		var restitutionAngle = restitutionRotation[1]**2;
 
-		//trouver la matrice de rotation de la restitution
-
-
-		//var matRot3Resti = TP3.Geometry.findRotationMatrix(axeResti, angleResti);
-		var quaternionResti = new THREE.Quaternion();
-		quaternionResti.setFromAxisAngle(axeResti, angleResti);
-		var matRot4Resti = new THREE.Matrix4();
-		matRot4Resti.makeRotationFromQuaternion(quaternionResti);
+		var restitutionQuaternion = new THREE.Quaternion();
+		restitutionQuaternion.setFromAxisAngle(restitutionAxis, restitutionAngle);
+		var restitutionRotationMatrix = new THREE.Matrix4();
+		restitutionRotationMatrix.makeRotationFromQuaternion(restitutionQuaternion);
 
 
-		var xAxisResti = new THREE.Vector3();
-		var yAxisResti = new THREE.Vector3();
-		var zAxisResti = new THREE.Vector3();
-		matRot4Resti.extractBasis(xAxisResti,yAxisResti,zAxisResti);
-		var matRot4Resti = new THREE.Matrix4().makeBasis(xAxisResti,yAxisResti,zAxisResti);
+		var xRestitution = new THREE.Vector3();
+		var yRestitution = new THREE.Vector3();
+		var zRestitution = new THREE.Vector3();
+		restitutionRotationMatrix.extractBasis(xRestitution,yRestitution,zRestitution);
+		restitutionRotationMatrix = new THREE.Matrix4().makeBasis(xRestitution,yRestitution,zRestitution);
 
 		//trouver ou serait le point avec restitution
-		var pt = node.p1.clone();
-		pt.applyMatrix4(matRot4Resti);
+		var restitutionPoint = node.p1.clone();
+		restitutionPoint.applyMatrix4(restitutionRotationMatrix);
 
 		//calculer le vecteur de la velocity de la restitution
-		var veloResti = new THREE.Vector3().subVectors(pt, node.p1);
-		veloResti.multiplyScalar(0.7*node.a0*dt);
+		var restutionVelocity = new THREE.Vector3().subVectors(restitutionPoint, node.p1);
+		restutionVelocity.multiplyScalar(0.7*node.a0*dt);
 
 		//la restitution sera appliquée au prohain temps
-		node.vel.add(veloResti).multiplyScalar(dt);
+		node.vel.add(restutionVelocity).multiplyScalar(dt);
 
-		//==================== Fin fonction
+		//==================== Fin
 
 		// Appel recursif sur les enfants
 		for (var i = 0; i < node.childNode.length; i++) {

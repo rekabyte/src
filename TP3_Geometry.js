@@ -17,102 +17,100 @@ class Node {
 TP3.Geometry = {
 
     simplifySkeleton: function (rootNode, rotationThreshold = 0.0001) {
-        // Condition d'arrêt : Si le noeud racine n'a pas d'enfant, alors on retourne le noeud sans modification
-        if (rootNode.childNode.length === 0) return rootNode;
-
-        // Parcours de tous les enfants du noeud racine
-        for (let i = 0; i < rootNode.childNode.length; i++) {
-            // Appeler récursivement la fonction sur chaque enfant
-            rootNode.childNode[i] = this.simplifySkeleton(rootNode.childNode[i], rotationThreshold);
-        }
-
-        // Si le noeud racine a un seul enfant
-        if (rootNode.childNode.length === 1) {
-            const child = rootNode.childNode[0];
-
-            // Vérifier si la rotation entre le parent et l'enfant est inférieure au seuil
+        //on simplifie recursivement:
+        rootNode.childNode = rootNode.childNode.map(child => this.simplifySkeleton(child, rotationThreshold));
+        
+        //si rootNode a seulement un enfant:
+        if (rootNode.childNode.length == 1) {
+            //on selectionne cet enfant:
+            var child = rootNode.childNode[0];
+            
+            //si la rotation entre l'enfant et le parent est moins que le treshold
             if (this.findRotation(rootNode.p1, child.p0)[1] <= rotationThreshold) {
-                // Mettre à jour les valeurs du parent
-                rootNode.childNode = child.childNode; // Remplacer les enfants du parent par les enfants de l'enfant
-                for (let i = 0; i < rootNode.childNode.length; i++) {
-                    rootNode.childNode[i].parentNode = rootNode; // Mettre à jour les parents des nouveaux enfants
-                }
-                rootNode.p1 = child.p1; // Mettre à jour la position finale du parent
-                rootNode.a1 = child.a1; // Mettre à jour l'angle final du parent
-                // Retourner le noeud parent mis à jour
-                return rootNode;
+                //alors on remplace l'enfant(var child) avec l'enfant de l'enfant, si ca fait du sens (┬┬﹏┬┬) 
+                rootNode.childNode = child.childNode.map(node => {
+                    node.parentNode = rootNode;
+                    return node;
+                });
+
+                //puis on update l'enfant du parent et le parent de l'enfant:
+                rootNode.p1 = child.p1;
+                rootNode.a1 = child.a1;
             }
         }
 
-        // Retourner le noeud principal de l'arbre
+        //on retour l'enfant si il a ete modif:
         return rootNode;
     },
 
-
     generateSegmentsHermite: function (rootNode, lengthDivisions = 4, radialDivisions = 8) {
-        var stack = [];
-        stack.push(rootNode);
+        //on init la pile initiale
+        var pile = [rootNode];
+        
+        //tant qu'il y a encore des nodes:
+        while (pile.length > 0) {
+            //on recup le node actuel de la pile:
+            var nodeActuel = pile.pop();
 
-        while (stack.length > 0) {
-            var currentNode = stack.pop();
+            //on calcule la direction du parent
+            //si pas de parent => on utiliser sa propre direction:
+            var parentDirection = (nodeActuel.parentNode?.p1 
+                || nodeActuel.p1).clone().sub(nodeActuel.parentNode?.p0 || nodeActuel.p0);
+                
+            //on ajoute tout les enfants a la pile:    
+            pile.push(...nodeActuel.childNode);
 
-            // Si le nœud actuel n'a pas de nœud parent, utilisez la direction p1 - p0 pour le parentDirection
-            var parentDirection;
-            if (currentNode.parentNode === null) {
-                parentDirection = currentNode.p1.clone().sub(currentNode.p0);
-            } else {
-                parentDirection = currentNode.parentNode.p1.clone().sub(currentNode.parentNode.p0);
-            }
+            //on init toutes les enfants de la section actuel:
+            nodeActuel.sections = Array.from({length: lengthDivisions + 1}, (_, divisionIndex) => {
+                //interpolationParameter = t qu'on utilise dans les interpolations
+                var interpolationParameter = divisionIndex / lengthDivisions;
 
-            for (var i = 0; i < currentNode.childNode.length; i++) {
-                stack.push(currentNode.childNode[i]);
-            }
+                //on calcule le point sur la courbe et la direction a ce point
+                var [curvePoint, directionVector] = this.hermite(nodeActuel.p0, nodeActuel.p1,
+                     parentDirection, nodeActuel.p1.clone().sub(nodeActuel.p0), interpolationParameter);
+    
+                //on calcule les points sur le cercle autour du point de la courbe
+                return Array.from({length: radialDivisions}, (_, radialIndex) => {
 
-            currentNode.sections = [];
+                    //puis on calcule le rayon + angle du point du cercle
+                    var radius = nodeActuel.a0 + (nodeActuel.a1 - nodeActuel.a0) * interpolationParameter;
+                    var angle = 2 * Math.PI * radialIndex / radialDivisions;
 
-            var rotationMatrix = new THREE.Matrix4();
-            for (var i = 0; i <= lengthDivisions; i++) {
-                var t = i / lengthDivisions;
-                var hermite = this.hermite(currentNode.p0, currentNode.p1, parentDirection, currentNode.p1.clone().sub(currentNode.p0), t);
-                var p = hermite[0];
-                dp = hermite[1];
+                    //ensuite on calcule le point sur le cercle
+                    var circlePoint = new THREE.Vector3(radius * Math.cos(angle), 0, radius * Math.sin(angle));
 
-                var section = [];
-                // Créer une base orthogonale
-                for (var j = 0; j < radialDivisions; j++) {
-                    var radius = currentNode.a0 + (currentNode.a1 - currentNode.a0) * t;
-                    var angle = 2 * Math.PI * j / radialDivisions;
-
-                    // Calculer le point sur le cercle en utilisant la base orthogonale
-                    var point = new THREE.Vector3(radius * Math.cos(angle), 0, radius * Math.sin(angle));
-                    var quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dp);
-                    point.applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(quaternion));
-                    point.add(p);
-                    section.push(point);
-                }
-
-                currentNode.sections.push(section);
-            }
+                    //rotation qui aligne le point du cercle avec le point de la courbe
+                    circlePoint.applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), directionVector)));
+                    
+                    //finalement on deplace ce point au centre
+                    return circlePoint.add(curvePoint);
+                });
+            });
         }
+        
         return rootNode;
     },
 
     hermite: function (h0, h1, v0, v1, t) {
 
+        //calcul des points de controles:
         var p0 = h0.clone();
         var p1 = h0.clone().add(v0.clone().multiplyScalar(1/3));
         var p2 = h1.clone().sub(v1.clone().multiplyScalar(1/3));
         var p3 = h1.clone();
 
-        p0 = p0.multiplyScalar(1 - t).add(p1.clone().multiplyScalar(t));
-        p1 = p1.multiplyScalar(1 - t).add(p2.clone().multiplyScalar(t));
-        p2 = p2.multiplyScalar(1 - t).add(p3.clone().multiplyScalar(t));
+        //interpolation lineaire entre les points de controles:
+        p0.lerp(p1, t);
+        p1.lerp(p2, t);
+        p2.lerp(p3, t);
 
-        p0 = p0.multiplyScalar(1 - t).add(p1.clone().multiplyScalar(t));
-        p1 = p1.multiplyScalar(1 - t).add(p2.clone().multiplyScalar(t));
+        //interpolation linwaire entre les resultats
+        p0.lerp(p1, t);
+        p1.lerp(p2, t);
 
-        var dp = p1.clone().sub(p0.clone()).normalize();
-        var p = p0.clone().multiplyScalar(1 - t).add(p1.clone().multiplyScalar(t));
+        //calcul du vecteur directionnel et du point sur la courbe:
+        const dp = p1.clone().sub(p0).normalize();
+        const p = p0.lerp(p1, t);
 
         return [p, dp];
     },

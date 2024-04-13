@@ -1,77 +1,119 @@
 TP3.Render = {
-    drawTreeRough: function (rootNode, scene, alpha, radialDivisions = 8, leavesCutoff = 0.1, leavesDensity = 10, applesProbability = 0.05, matrix = new THREE.Matrix4()) {
-        var nodes = [];
-        var branchGeometries = [];
-        var leafGeometries = [];
-        var appleGeometries = [];
 
-        nodes.push(rootNode);
+	drawTreeRough: function (rootNode, scene, alpha, radialDivisions = 8, leavesCutoff = 0.1, leavesDensity = 10, applesProbability = 0.05, matrix = new THREE.Matrix4()) {
+		//init la pile et nos arrays de geometries
+		var pile = [rootNode];
+		var cylindersGeo = [];
+		var leavesGeo = [];
+		var applesGeo = [];
 
-        while (nodes.length > 0) {
-            var currentNode = nodes.pop();
-            var height = currentNode.p0.distanceTo(currentNode.p1);
+		//materiaux:
+		const branchMaterial = new THREE.MeshLambertMaterial({ color : 0x8B5A2B});
+		//j'ai mis leaf en double-sided ici pour debug, a enlever plus tard:
+		//const leafMaterial = new THREE.MeshPhongMaterial({side: THREE.DoubleSide ,color : 0x3A5F0B});
+		const leafMaterial = new THREE.MeshPhongMaterial({color : 0x3A5F0B});
+		const appleMaterial = new THREE.MeshPhongMaterial({color: 0x5F0B0B});
 
-            for (var i = 0; i < currentNode.childNode.length; i++) {
-                nodes.push(currentNode.childNode[i]);
-            }
+		//tant qu'il y a encore un node a parcourir
+		while (pile.length > 0) {
+			//on recupere le node actuel
+			var nodeActuel = pile.pop();
 
-            var cylinderGeometry = new THREE.CylinderBufferGeometry(currentNode.a1, currentNode.a0, height, radialDivisions);
-            cylinderGeometry.translate(0, height / 2, 0);
-            var branchDirection = currentNode.p1.sub(currentNode.p0).normalize();
-            var quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), branchDirection);
-            cylinderGeometry.applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(quaternion));
-            cylinderGeometry.translate(0, -height / 2, 0);
-            cylinderGeometry.translate(currentNode.p0.x, currentNode.p0.y, currentNode.p0.z);
-            cylinderGeometry.applyMatrix4(matrix);
+			//on popule la pile avec tout les nodes possibles
+			for (var i = 0; i < nodeActuel.childNode.length; i++) {
+				pile.push(nodeActuel.childNode[i]);
+			}
 
-            branchGeometries.push(cylinderGeometry);
+			//on calcule le demivecteur
+			var demiVecteur = nodeActuel.p1.clone();
+			demiVecteur.add(nodeActuel.p0);
+			demiVecteur.multiplyScalar(0.5);
 
-            if (currentNode.a0 < alpha * leavesCutoff) {
-                for (var i = 0; i < leavesDensity; i++) {
+			//on calcule distance entre p0 et p1
+			var dist = nodeActuel.p0.distanceTo(nodeActuel.p1);
+			//geometrie des branches:
+			var cylinderGeometry = new THREE.CylinderBufferGeometry(nodeActuel.a0, nodeActuel.a1, dist, radialDivisions);
+			cylinderGeometry.rotateX(Math.PI / 2);
 
-                    var leafGeometry = new THREE.PlaneBufferGeometry(alpha / 2, alpha / 2);
-                    var leafX = (Math.random() - 0.5) * alpha;
-                    var leafY = (currentNode.childNode.length == 0) ? Math.random() * height : Math.random() * (height + alpha);
-                    var leafZ = (Math.random() - 0.5) * alpha;
-                    var leafPosition = new THREE.Vector3(leafX, leafY, leafZ);
+			// diff1/diff2 = p0 - p1 / p1 - po
+			var diff1 = new THREE.Vector3().subVectors(nodeActuel.p1, nodeActuel.p0).normalize();
+			var diff2 = new THREE.Vector3().subVectors(nodeActuel.p0, nodeActuel.p1);
+			cylinderGeometry.lookAt(diff2);
 
-                    //applique la même rotation que la branche sur laquelle se trouve la feuille
-                    leafPosition.applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(quaternion));
-                    //déplace la feuille à la position de départ de la branche
-                    leafPosition.add(new THREE.Vector3(currentNode.p0.x, currentNode.p0.y - 0.5 * alpha, currentNode.p0.z));
-                    // applique une rotation aléatoire à la feuille
-                    var randomRotation = new THREE.Vector3(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1);
-                    leafGeometry.lookAt(randomRotation);
-                    leafGeometry.translate(leafPosition.x, leafPosition.y, leafPosition.z);
-                    leafGeometry.applyMatrix4(matrix);
-                    leafGeometries.push(leafGeometry);
-                }
-                //add apple
-                if (Math.random() < applesProbability) {
-                    var appleGeometry = new THREE.BoxBufferGeometry(alpha / 3, alpha / 3, alpha / 3);
-                    var applePosition = currentNode.p0;
-                    applePosition.y -= alpha/1.5;
-                    appleGeometry.translate(applePosition.x, applePosition.y, applePosition.z);
-                    appleGeometry.applyMatrix4(matrix);
-                    appleGeometries.push(appleGeometry);
-                }
-            }
+			//matrice de translation:
+			var translate = new THREE.Matrix4();
+			translate.makeTranslation(demiVecteur.x, demiVecteur.y, demiVecteur.z);
+			cylinderGeometry.applyMatrix4(translate);
 
-        }
+			//creation de feuilles selon sa proba
+			if ((nodeActuel.a0 < alpha * leavesCutoff)) {
 
-        branchGeometries = THREE.BufferGeometryUtils.mergeBufferGeometries(branchGeometries);
-        leafGeometries = THREE.BufferGeometryUtils.mergeBufferGeometries(leafGeometries);
-        appleGeometries = THREE.BufferGeometryUtils.mergeBufferGeometries(appleGeometries);
+				//translation des feuilles:
+				var transX;
+				var transY;
+				var transZ;
 
-		
-        var leaves = new THREE.Mesh(mergedLeafGeometry, new THREE.MeshPhongMaterial({ color: 0x3A5F0B }));
-        var branches = new THREE.Mesh(mergedBranchGeometry, new THREE.MeshLambertMaterial({ color: 0x8B5A2B }));
-        var apples = new THREE.Mesh(mergedAppleGeometry, new THREE.MeshPhongMaterial({color: 0x5F0B0B}));
+				//on veut generer `leavesDensity` feuilles par branche
+				for (i = 0; i < leavesDensity; i++) {
 
-        scene.add(branches);
-        scene.add(leaves);
-        scene.add(apples);
-    },
+					//rotation aleatoire pour la feuille
+					var leafGeometry = new THREE.PlaneBufferGeometry(alpha, alpha);
+					var rotation = Math.random() * 2 * Math.PI;
+					leafGeometry.rotateX(rotation);
+					leafGeometry.rotateY(rotation);
+					leafGeometry.rotateZ(rotation);
+
+					var side = Math.random() < 0.5 ? 1 : -1;
+
+					var radius = ((alpha / 2) * Math.random()) * side;
+					var radiusVector = new THREE.Vector3();
+					radiusVector = diff2.normalize().cross(new THREE.Vector3(0, 0, 1)).normalize();
+					radiusVector.multiplyScalar(radius);
+					radiusVector.applyAxisAngle(diff1, rotation);
+
+					//total = 1 + (alpha / length(p1 - p0))
+					var total = diff2.multiplyScalar((alpha/diff2.length()) + 1);
+
+					var vector = nodeActuel.childNode.length == 0 ? total : diff2;
+					transX = nodeActuel.p0.x + (vector.x * Math.random()) + radiusVector.x;
+					transY = nodeActuel.p0.y + (vector.y * Math.random()) + radiusVector.y;
+					transZ = nodeActuel.p0.z + (vector.z * Math.random()) + radiusVector.z;
+
+					translate.makeTranslation(transX, transY, transZ);
+					leafGeometry.applyMatrix4(translate);
+
+					leavesGeo.push(leafGeometry);
+				}
+			}
+
+			cylindersGeo.push(cylinderGeometry);
+
+			//ajouter la pomme selon sa proba
+			if (Math.random() < applesProbability) {
+				var appleGeo = new THREE.BoxBufferGeometry(alpha, alpha, alpha);
+				var applePos = nodeActuel.p0;
+				applePos.y -= alpha/1.5;
+				appleGeo.translate(applePos.x, applePos.y, applePos.z);
+				appleGeo.applyMatrix4(matrix);
+				applesGeo.push(appleGeo);
+			}
+		}
+
+		//merge des geometries:
+		var cylinderMergedGeo = THREE.BufferGeometryUtils.mergeBufferGeometries(cylindersGeo);
+		var leafMergedGeo = THREE.BufferGeometryUtils.mergeBufferGeometries(leavesGeo);
+		var mergedAppleGeo = THREE.BufferGeometryUtils.mergeBufferGeometries(applesGeo);
+
+		//creation de mesh:
+		var cylinders = new THREE.Mesh(cylinderMergedGeo, branchMaterial);
+		var leaves = new THREE.Mesh(leafMergedGeo, leafMaterial);
+		var apples = new THREE.Mesh(mergedAppleGeo, appleMaterial);
+
+		//finalement on ajoute tout ca a la scene:
+		scene.add(cylinders);
+		scene.add(leaves);
+		scene.add(apples);
+	},
 
 	drawTreeHermite: function (rootNode, scene, alpha, leavesCutoff = 0.1, leavesDensity = 10, applesProbability = 0.05, matrix = new THREE.Matrix4()) {
 		//pour stocker les vertices + index
@@ -257,12 +299,12 @@ TP3.Render = {
 					//sphere de radius alpha/2, je voulais pas surcharger la pomme de details
 					//donc j'ai mis que 4 coupures horizontales et vericales
 					//une pomme meriterait-elle vraiment plus que ca?
-					var appleGeometry = new THREE.SphereBufferGeometry(alpha/2, 4, 4);
-					var applePosition = nodeActuel.p0;
-					applePosition.y -= alpha/1.5;
-					appleGeometry.translate(applePosition.x, applePosition.y, applePosition.z);
-					appleGeometry.applyMatrix4(matrix);
-					appleGeometries.push(appleGeometry);
+					var appleGeo = new THREE.SphereBufferGeometry(alpha/2, 4, 4);
+					var applePos = nodeActuel.p0;
+					applePos.y -= alpha/1.5;
+					appleGeo.translate(applePos.x, applePos.y, applePos.z);
+					appleGeo.applyMatrix4(matrix);
+					appleGeometries.push(appleGeo);
 				}
 
 			}
