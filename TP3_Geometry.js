@@ -133,20 +133,6 @@ TP3.Geometry = {
 		return [axis, angle];
 	},
 
-    findRotationMatrix: function(axe, angle){
-		const sinA = Math.sin(angle);
-		const cosA = Math.cos(angle);
-		const unMoinsCosA = 1.0 - cosA;
-		let rotationMatrix = new THREE.Matrix3();
-
-		return rotationMatrix.set((axe.x * axe.x * unMoinsCosA) + cosA, (axe.y * axe.x * unMoinsCosA) - (sinA * axe.z),
-			(axe.z * axe.x * unMoinsCosA) + (sinA * axe.y), (axe.x * axe.y * unMoinsCosA) + (sinA * axe.z),
-			(axe.y * axe.y * unMoinsCosA) + cosA, (axe.z * axe.y * unMoinsCosA) - (sinA * axe.x),
-			(axe.x * axe.z * unMoinsCosA) - (sinA * axe.y), (axe.y * axe.z * unMoinsCosA) + (sinA * axe.x),
-			(axe.z * axe.z * unMoinsCosA) + cosA);
-
-	},
-
 	// Projeter un vecter a sur b
 	project: function (a, b) {
 		return b.clone().multiplyScalar(a.dot(b) / (b.lengthSq()));
